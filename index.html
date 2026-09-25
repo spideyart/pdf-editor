@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Offline Web PDF Editor</title>
+  <!-- Load pdf-lib directly from CDN -->
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; display: flex; flex-direction: column; align-items: center; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; max-width: 600px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    h2 { margin-top: 0; font-size: 1.25rem; color: #38bdf8; }
+    .input-group { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    input[type="text"], input[type="file"] { background: #0f172a; border: 1px solid #475569; color: #fff; padding: 0.6rem; border-radius: 6px; }
+    .coords { display: flex; gap: 0.5rem; }
+    .coords input { width: 50%; }
+    button { background: #0284c7; color: white; border: none; padding: 0.75rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
+    button:hover { background: #0369a1; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>Client-Side PDF Annotator & Editor</h2>
+    
+    <div class="input-group">
+      <label>1. Select a PDF file:</label>
+      <input type="file" id="pdfFileInput" accept="application/pdf" />
+    </div>
+
+    <div class="input-group">
+      <label>2. Add custom text overlay:</label>
+      <input type="text" id="overlayText" placeholder="e.g., Verified & Approved" value="Approved" />
+    </div>
+
+    <div class="input-group">
+      <label>3. Coordinates (X, Y) & Size:</label>
+      <div class="coords">
+        <input type="number" id="coordX" placeholder="X position" value="50" />
+        <input type="number" id="coordY" placeholder="Y position" value="500" />
+        <input type="number" id="fontSize" placeholder="Font Size" value="24" />
+      </div>
+    </div>
+
+    <button id="processBtn">Export Edited PDF</button>
+  </div>
+
+  <script>
+    const { PDFDocument, rgb, StandardFonts } = PDFLib;
+
+    document.getElementById('processBtn').addEventListener('click', async () => {
+      const fileInput = document.getElementById('pdfFileInput');
+      if (!fileInput.files.length) {
+        alert("Please select a PDF file first.");
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const arrayBuffer = await file.arrayBuffer();
+
+      // Load existing document in memory
+      const pdfDoc = await PDFDocument.load(arrayBuffer);
+      const helveticaFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      
+      const pages = pdfDoc.getPages();
+      const firstPage = pages[0];
+
+      const text = document.getElementById('overlayText').value;
+      const x = parseFloat(document.getElementById('coordX').value) || 50;
+      const y = parseFloat(document.getElementById('coordY').value) || 500;
+      const size = parseFloat(document.getElementById('fontSize').value) || 20;
+
+      // Draw custom text element
+      firstPage.drawText(text, {
+        x: x,
+        y: y,
+        size: size,
+        font: helveticaFont,
+        color: rgb(0.85, 0.1, 0.1), // Red color
+      });
+
+      // Export modified binary
+      const pdfBytes = await pdfDoc.save();
+
+      // Trigger automatic instant download
+      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `edited_${file.name}`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+  </script>
+</body>
+</html>
