@@ -2,92 +2,266 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Offline Web PDF Editor</title>
-  <!-- Load pdf-lib directly from CDN -->
+  <title>Modern In-Browser PDF Editor</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; display: flex; flex-direction: column; align-items: center; }
-    .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; max-width: 600px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
-    h2 { margin-top: 0; font-size: 1.25rem; color: #38bdf8; }
-    .input-group { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
-    input[type="text"], input[type="file"] { background: #0f172a; border: 1px solid #475569; color: #fff; padding: 0.6rem; border-radius: 6px; }
-    .coords { display: flex; gap: 0.5rem; }
-    .coords input { width: 50%; }
-    button { background: #0284c7; color: white; border: none; padding: 0.75rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
-    button:hover { background: #0369a1; }
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --accent: #38bdf8;
+      --text: #f8fafc;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    /* Top Toolbar */
+    .toolbar {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+    }
+    .tool-group { display: flex; align-items: center; gap: 0.5rem; }
+    button, label.btn {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      padding: 0.5rem 0.9rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    button:hover, label.btn:hover { background: #0369a1; }
+    button.active { background: #38bdf8; color: #0f172a; }
+    button.export-btn { background: #16a34a; }
+    button.export-btn:hover { background: #15803d; }
+    input[type="file"] { display: none; }
+    input[type="text"], input[type="number"], select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.4rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+
+    /* Viewer Container */
+    #viewport {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 2rem;
+      background: #090d16;
+    }
+    .page-container {
+      position: relative;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+      background: #fff;
+    }
+    canvas { display: block; }
+    
+    /* Interactive Overlay */
+    .overlay-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: auto;
+      cursor: crosshair;
+    }
+    .user-text-element {
+      position: absolute;
+      color: #000;
+      cursor: move;
+      white-space: pre;
+      user-select: none;
+      border: 1px dashed transparent;
+      padding: 1px 3px;
+    }
+    .user-text-element:hover { border-color: #0284c7; }
+    .whiteout-box {
+      position: absolute;
+      background: #fff;
+      border: 1px dashed #cbd5e1;
+    }
   </style>
 </head>
 <body>
 
-  <div class="card">
-    <h2>Client-Side PDF Annotator & Editor</h2>
-    
-    <div class="input-group">
-      <label>1. Select a PDF file:</label>
-      <input type="file" id="pdfFileInput" accept="application/pdf" />
+  <div class="toolbar">
+    <label class="btn" for="pdf-upload">📂 Open PDF</label>
+    <input type="file" id="pdf-upload" accept="application/pdf" />
+
+    <div class="tool-group">
+      <button id="text-mode-btn" class="active">✍️ Add / Replace Text</button>
+      <button id="whiteout-mode-btn">⬜ Whiteout (Erase)</button>
     </div>
 
-    <div class="input-group">
-      <label>2. Add custom text overlay:</label>
-      <input type="text" id="overlayText" placeholder="e.g., Verified & Approved" value="Approved" />
+    <div class="tool-group">
+      <input type="text" id="text-input" placeholder="Type replacement text..." value="Updated Text" />
+      <input type="number" id="font-size" value="14" min="8" max="72" style="width: 60px;" title="Font Size" />
     </div>
 
-    <div class="input-group">
-      <label>3. Coordinates (X, Y) & Size:</label>
-      <div class="coords">
-        <input type="number" id="coordX" placeholder="X position" value="50" />
-        <input type="number" id="coordY" placeholder="Y position" value="500" />
-        <input type="number" id="fontSize" placeholder="Font Size" value="24" />
-      </div>
-    </div>
+    <button id="export-btn" class="export-btn">💾 Save & Download PDF</button>
+  </div>
 
-    <button id="processBtn">Export Edited PDF</button>
+  <div id="viewport">
+    <div id="page-wrapper" class="page-container" style="display: none;">
+      <canvas id="pdf-canvas"></canvas>
+      <div id="overlay" class="overlay-layer"></div>
+    </div>
   </div>
 
   <script>
-    const { PDFDocument, rgb, StandardFonts } = PDFLib;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    document.getElementById('processBtn').addEventListener('click', async () => {
-      const fileInput = document.getElementById('pdfFileInput');
-      if (!fileInput.files.length) {
-        alert("Please select a PDF file first.");
-        return;
+    let currentPdfBytes = null;
+    let pdfDoc = null;
+    let pageNum = 1;
+    let scale = 1.5;
+    let mode = 'text'; // 'text' | 'whiteout'
+    let edits = []; // Stores edits: { type: 'text'|'whiteout', x, y, text, size, width, height }
+
+    const uploadInput = document.getElementById('pdf-upload');
+    const canvas = document.getElementById('pdf-canvas');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const wrapper = document.getElementById('page-wrapper');
+    const textBtn = document.getElementById('text-mode-btn');
+    const whiteoutBtn = document.getElementById('whiteout-mode-btn');
+
+    // Toggle Modes
+    textBtn.onclick = () => { mode = 'text'; textBtn.classList.add('active'); whiteoutBtn.classList.remove('active'); };
+    whiteoutBtn.onclick = () => { mode = 'whiteout'; whiteoutBtn.classList.add('active'); textBtn.classList.remove('active'); };
+
+    // 1. File Upload & Visual Rendering
+    uploadInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      currentPdfBytes = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: currentPdfBytes });
+      pdfDoc = await loadingTask.promise;
+      renderPage(pageNum);
+    });
+
+    async function renderPage(num) {
+      const page = await pdfDoc.getPage(num);
+      const viewport = page.getViewport({ scale });
+
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      wrapper.style.width = `${viewport.width}px`;
+      wrapper.style.height = `${viewport.height}px`;
+      wrapper.style.display = 'block';
+
+      const renderContext = { canvasContext: ctx, viewport: viewport };
+      await page.render(renderContext).promise;
+      edits = [];
+      overlay.innerHTML = '';
+    }
+
+    // 2. Click to Add Text or Whiteout Mistake
+    overlay.addEventListener('click', (e) => {
+      if (!pdfDoc) return;
+      const rect = overlay.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      const fontSize = parseInt(document.getElementById('font-size').value, 10) || 14;
+      const content = document.getElementById('text-input').value;
+
+      if (mode === 'text') {
+        if (!content) return alert('Enter replacement text in the toolbar first!');
+        
+        // Add visual text element
+        const el = document.createElement('div');
+        el.className = 'user-text-element';
+        el.innerText = content;
+        el.style.fontSize = `${fontSize * scale * 0.75}px`;
+        el.style.left = `${clickX}px`;
+        el.style.top = `${clickY - (fontSize * scale * 0.5)}px`;
+        overlay.appendChild(el);
+
+        edits.push({
+          type: 'text',
+          x: clickX / scale,
+          y: clickY / scale,
+          text: content,
+          size: fontSize
+        });
+      } else if (mode === 'whiteout') {
+        // Erase 120x24px area (standard line width)
+        const boxWidth = 120;
+        const boxHeight = 22;
+
+        const box = document.createElement('div');
+        box.className = 'whiteout-box';
+        box.style.width = `${boxWidth * scale}px`;
+        box.style.height = `${boxHeight * scale}px`;
+        box.style.left = `${clickX}px`;
+        box.style.top = `${clickY - (boxHeight * scale / 2)}px`;
+        overlay.appendChild(box);
+
+        edits.push({
+          type: 'whiteout',
+          x: clickX / scale,
+          y: clickY / scale,
+          width: boxWidth,
+          height: boxHeight
+        });
+      }
+    });
+
+    // 3. Save & Export Modded PDF
+    document.getElementById('export-btn').addEventListener('click', async () => {
+      if (!currentPdfBytes) return alert('Please upload a PDF first.');
+
+      const { PDFDocument, rgb, StandardFonts } = PDFLib;
+      const loadedPdf = await PDFDocument.load(currentPdfBytes);
+      const helvetica = await loadedPdf.embedFont(StandardFonts.Helvetica);
+      const page = loadedPdf.getPages()[pageNum - 1];
+      const pageHeight = page.getHeight();
+
+      for (const edit of edits) {
+        // PDF coordinates originate from bottom-left; web browser originates from top-left
+        const pdfY = pageHeight - edit.y;
+
+        if (edit.type === 'whiteout') {
+          page.drawRectangle({
+            x: edit.x,
+            y: pdfY - (edit.height / 2),
+            width: edit.width,
+            height: edit.height,
+            color: rgb(1, 1, 1), // Pure white cover
+          });
+        } else if (edit.type === 'text') {
+          page.drawText(edit.text, {
+            x: edit.x,
+            y: pdfY - (edit.size * 0.35),
+            size: edit.size,
+            font: helvetica,
+            color: rgb(0, 0, 0),
+          });
+        }
       }
 
-      const file = fileInput.files[0];
-      const arrayBuffer = await file.arrayBuffer();
-
-      // Load existing document in memory
-      const pdfDoc = await PDFDocument.load(arrayBuffer);
-      const helveticaFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-      
-      const pages = pdfDoc.getPages();
-      const firstPage = pages[0];
-
-      const text = document.getElementById('overlayText').value;
-      const x = parseFloat(document.getElementById('coordX').value) || 50;
-      const y = parseFloat(document.getElementById('coordY').value) || 500;
-      const size = parseFloat(document.getElementById('fontSize').value) || 20;
-
-      // Draw custom text element
-      firstPage.drawText(text, {
-        x: x,
-        y: y,
-        size: size,
-        font: helveticaFont,
-        color: rgb(0.85, 0.1, 0.1), // Red color
-      });
-
-      // Export modified binary
-      const pdfBytes = await pdfDoc.save();
-
-      // Trigger automatic instant download
-      const blob = new Blob([pdfBytes], { type: "application/pdf" });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `edited_${file.name}`;
-      link.click();
-      URL.revokeObjectURL(link.href);
+      const modifiedBytes = await loadedPdf.save();
+      const blob = new Blob([modifiedBytes], { type: 'application/pdf' });
+      const dlLink = document.createElement('a');
+      dlLink.href = URL.createObjectURL(blob);
+      dlLink.download = 'modified_document.pdf';
+      dlLink.click();
     });
   </script>
 </body>
