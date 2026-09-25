@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Smart PDF In-Place Editor</title>
-  <!-- PDF.js core & worker -->
+  <!-- Prevents browser viewport zoom while typing on mobile -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart PDF Mobile Editor</title>
+  
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <!-- pdf-lib -->
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   
   <style>
@@ -16,61 +17,67 @@
       --border: #334155;
       --text: #f8fafc;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+      background: var(--bg); 
+      color: var(--text); 
+      display: flex; 
+      flex-direction: column; 
+      height: 100dvh; 
+      overflow: hidden; 
+    }
 
-    /* Top Navigation Toolbar */
+    /* Fixed App Bar */
     .toolbar {
       background: var(--panel);
       border-bottom: 1px solid var(--border);
-      padding: 0.75rem 1.5rem;
+      padding: 0.6rem 1rem;
       display: flex;
       align-items: center;
-      gap: 1.25rem;
+      justify-content: space-between;
+      gap: 0.5rem;
       z-index: 100;
     }
-    .hint { font-size: 0.85rem; color: #94a3b8; }
-    .hint span { color: var(--accent); font-weight: 600; }
+    .btn-group { display: flex; align-items: center; gap: 0.4rem; }
     button, label.btn {
       background: #0284c7;
       color: #fff;
       border: none;
-      padding: 0.55rem 1rem;
+      padding: 0.45rem 0.8rem;
       border-radius: 6px;
-      cursor: pointer;
       font-size: 0.85rem;
       font-weight: 600;
-      transition: background 0.2s;
+      cursor: pointer;
     }
-    button:hover, label.btn:hover { background: #0369a1; }
-    button.save-btn { background: #16a34a; margin-left: auto; }
-    button.save-btn:hover { background: #15803d; }
+    button:active, label.btn:active { background: #0369a1; }
+    button.save-btn { background: #16a34a; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
     input[type="file"] { display: none; }
+    .page-info { font-size: 0.85rem; color: #94a3b8; min-width: 60px; text-align: center; }
 
-    /* Canvas & Viewer Workspace */
+    /* PDF Viewport */
     #viewport {
       flex: 1;
       overflow: auto;
       display: flex;
       justify-content: center;
       align-items: flex-start;
-      padding: 2.5rem 1rem;
+      padding: 1rem 0.5rem;
       background: #090d16;
     }
     .page-container {
       position: relative;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
       background: #fff;
+      touch-action: pan-x pan-y;
     }
-    canvas { display: block; }
+    canvas { display: block; width: 100% !important; height: auto !important; }
 
-    /* Interactive PDF Text Layer */
+    /* Interactive Text Layer */
     .textLayer {
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
       overflow: hidden;
       line-height: 1.0;
     }
@@ -80,33 +87,52 @@
       white-space: pre;
       cursor: pointer;
       transform-origin: 0% 0%;
-      border-radius: 2px;
     }
-    .textLayer span:hover {
-      background: rgba(56, 189, 248, 0.25);
-      border: 1px dashed rgba(2, 132, 199, 0.7);
+    .textLayer span:active {
+      background: rgba(56, 189, 248, 0.35);
+      border: 1px dashed #38bdf8;
     }
 
-    /* Live Editing Input Element */
-    .live-editor-input {
-      position: absolute;
-      z-index: 50;
-      border: 2px solid var(--accent);
-      background: #ffffff;
-      color: #000000;
-      font-family: Helvetica, Arial, sans-serif;
-      padding: 0 2px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-      border-radius: 2px;
+    /* Mobile Text Edit Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .modal-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 400px;
+      padding: 1.25rem;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .modal-box h3 { font-size: 1rem; margin-bottom: 0.75rem; color: var(--accent); }
+    .modal-box input {
+      width: 100%;
+      font-size: 1rem; /* 16px font prevents iOS/Android auto-zoom */
+      padding: 0.6rem 0.8rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: #fff;
+      border-radius: 6px;
+      margin-bottom: 1rem;
       outline: none;
     }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 0.6rem; }
+    .btn-cancel { background: #475569; }
 
-    /* Visual Mask on Canvas */
-    .applied-edit-box {
+    /* Visual replacement overlay */
+    .applied-mask {
       position: absolute;
       background: #ffffff;
       color: #000000;
-      font-family: Helvetica, Arial, sans-serif;
       display: flex;
       align-items: center;
       white-space: pre;
@@ -118,12 +144,16 @@
 <body>
 
   <div class="toolbar">
-    <label class="btn" for="pdf-upload">📂 Open PDF</label>
-    <input type="file" id="pdf-upload" accept="application/pdf" />
+    <div class="btn-group">
+      <label class="btn" for="pdf-upload">📂 Open</label>
+      <input type="file" id="pdf-upload" accept="application/pdf" />
 
-    <p class="hint">💡 <span>Double-click any text</span> in the document to edit it directly.</p>
+      <button id="prev-page" disabled>◀</button>
+      <span id="page-num-display" class="page-info">- / -</span>
+      <button id="next-page" disabled>▶</button>
+    </div>
 
-    <button id="save-btn" class="save-btn">💾 Save & Download</button>
+    <button id="save-btn" class="save-btn" disabled>💾 Save</button>
   </div>
 
   <div id="viewport">
@@ -133,178 +163,244 @@
     </div>
   </div>
 
+  <!-- Mobile-Friendly Pop-up Text Editor -->
+  <div id="edit-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <h3>Edit Text</h3>
+      <input type="text" id="modal-input" placeholder="Type new text..." />
+      <div class="modal-actions">
+        <button id="modal-cancel-btn" class="btn-cancel">Cancel</button>
+        <button id="modal-apply-btn">Apply</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    let currentPdfBytes = null;
+    let rawPdfBytes = null;
     let pdfDoc = null;
-    let pageNum = 1;
-    let scale = 1.5;
-    let textEdits = []; // Stores: { x, y, width, height, newText, fontSize }
+    let currentPage = 1;
+    let totalPages = 0;
+    let currentScale = 1.5;
+    let allPageEdits = {}; // Key: pageIndex -> Array of edits
 
-    const uploadInput = document.getElementById('pdf-upload');
+    let activeEditTarget = null;
+
+    const fileInput = document.getElementById('pdf-upload');
     const canvas = document.getElementById('pdf-canvas');
     const ctx = canvas.getContext('2d');
     const wrapper = document.getElementById('page-wrapper');
-    const textLayerDiv = document.getElementById('text-layer');
+    const textLayer = document.getElementById('text-layer');
+    const pageNumDisplay = document.getElementById('page-num-display');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const saveBtn = document.getElementById('save-btn');
 
-    // 1. Load and Render PDF with TextLayer
-    uploadInput.addEventListener('change', async (e) => {
+    const editModal = document.getElementById('edit-modal');
+    const modalInput = document.getElementById('modal-input');
+    const modalCancel = document.getElementById('modal-cancel-btn');
+    const modalApply = document.getElementById('modal-apply-btn');
+
+    // 1. Load PDF Document
+    fileInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
 
-      currentPdfBytes = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: currentPdfBytes });
-      pdfDoc = await loadingTask.promise;
-      renderCurrentPage(pageNum);
+      rawPdfBytes = await file.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument({ data: rawPdfBytes.slice(0) }).promise;
+      
+      totalPages = pdfDoc.numPages;
+      currentPage = 1;
+      allPageEdits = {};
+      
+      saveBtn.disabled = false;
+      renderPage(currentPage);
     });
 
-    async function renderCurrentPage(num) {
-      const page = await pdfDoc.getPage(num);
-      const viewport = page.getViewport({ scale });
+    // 2. Render Page Canvas & Interactive Text Layer
+    async function renderPage(pageNum) {
+      updateNavControls();
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: currentScale });
 
-      canvas.height = viewport.height;
       canvas.width = viewport.width;
+      canvas.height = viewport.height;
       wrapper.style.width = `${viewport.width}px`;
       wrapper.style.height = `${viewport.height}px`;
       wrapper.style.display = 'block';
 
-      // Render Visual Canvas
+      // Clear previous overlay & masks
+      textLayer.innerHTML = '';
+      document.querySelectorAll('.applied-mask').forEach(el => el.remove());
+
       await page.render({ canvasContext: ctx, viewport }).promise;
 
-      // Extract & Render Text Layer
-      textLayerDiv.innerHTML = '';
-      textEdits = [];
-
+      // Extract Text Layer
       const textContent = await page.getTextContent();
-      
-      // Render spans to match positions exactly
       textContent.items.forEach((item) => {
+        if (!item.str.trim()) return;
         const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
         const fontHeight = Math.sqrt((tx[2] * tx[2]) + (tx[3] * tx[3]));
-        
+
         const span = document.createElement('span');
         span.textContent = item.str;
         span.style.fontSize = `${fontHeight}px`;
         span.style.fontFamily = item.fontName || 'sans-serif';
         span.style.left = `${tx[4]}px`;
         span.style.top = `${tx[5] - fontHeight}px`;
-        span.dataset.rawText = item.str;
-        span.dataset.fontSize = fontHeight;
+        span.style.height = `${fontHeight}px`;
 
-        // Double click handler for in-place edit
-        span.addEventListener('dblclick', (evt) => {
-          evt.stopPropagation();
-          startInPlaceEdit(span, tx[4], tx[5] - fontHeight, fontHeight, item);
+        // Single click or tap to edit (mobile friendly)
+        span.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openMobileEditor({
+            span,
+            left: tx[4],
+            top: tx[5] - fontHeight,
+            fontHeight,
+            pageIndex: currentPage,
+            originalText: item.str
+          });
         });
 
-        textLayerDiv.appendChild(span);
+        textLayer.appendChild(span);
       });
-    }
 
-    // 2. Open an Input Box directly on the Double-Clicked Word
-    function startInPlaceEdit(span, left, top, fontHeight, rawItem) {
-      // Remove any existing active input box
-      const existing = document.querySelector('.live-editor-input');
-      if (existing) existing.remove();
-
-      const rect = span.getBoundingClientRect();
-      const parentRect = wrapper.getBoundingClientRect();
-
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.className = 'live-editor-input';
-      input.value = span.textContent.trim();
-      
-      const width = Math.max(rect.width + 10, 80);
-      input.style.width = `${width}px`;
-      input.style.height = `${fontHeight + 6}px`;
-      input.style.fontSize = `${fontHeight}px`;
-      input.style.left = `${left}px`;
-      input.style.top = `${top - 2}px`;
-
-      wrapper.appendChild(input);
-      input.focus();
-      input.select();
-
-      // Commit changes when user hits Enter or clicks away (blur)
-      function commitChange() {
-        const newValue = input.value;
-        input.remove();
-
-        if (newValue !== span.textContent) {
-          span.textContent = newValue;
-
-          // Draw an instant visual patch over the canvas
-          const patch = document.createElement('div');
-          patch.className = 'applied-edit-box';
-          patch.style.left = `${left}px`;
-          patch.style.top = `${top - 1}px`;
-          patch.style.width = `${Math.max(rect.width + 4, width)}px`;
-          patch.style.height = `${fontHeight + 2}px`;
-          patch.style.fontSize = `${fontHeight}px`;
-          patch.innerText = newValue;
-          wrapper.appendChild(patch);
-
-          // Save coordinates for final PDF export
-          textEdits.push({
-            x: left / scale,
-            y: top / scale,
-            width: (Math.max(rect.width + 4, width)) / scale,
-            height: (fontHeight + 4) / scale,
-            newText: newValue,
-            fontSize: (fontHeight / scale) * 0.95
-          });
-        }
+      // Restore previously saved visual edits for this page
+      if (allPageEdits[currentPage]) {
+        allPageEdits[currentPage].forEach(drawVisualMask);
       }
-
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') commitChange();
-        if (e.key === 'Escape') input.remove();
-      });
-      input.addEventListener('blur', commitChange);
     }
 
-    // 3. Bake and Export using pdf-lib
-    document.getElementById('save-btn').addEventListener('click', async () => {
-      if (!currentPdfBytes) return alert('Please load a PDF document first.');
+    // 3. Mobile Text Input Modal Handlers
+    function openMobileEditor(targetData) {
+      activeEditTarget = targetData;
+      modalInput.value = targetData.span.textContent.trim();
+      editModal.style.display = 'flex';
+      setTimeout(() => {
+        modalInput.focus();
+        modalInput.select();
+      }, 50);
+    }
+
+    modalCancel.onclick = () => {
+      editModal.style.display = 'none';
+      activeEditTarget = null;
+    };
+
+    modalApply.onclick = () => {
+      if (!activeEditTarget) return;
+      const newText = modalInput.value;
+      const { left, top, fontHeight, span, pageIndex } = activeEditTarget;
+
+      const spanRect = span.getBoundingClientRect();
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const calculatedWidth = (spanRect.width / wrapperRect.width) * canvas.width;
+
+      const editData = {
+        left,
+        top,
+        width: Math.max(calculatedWidth + 6, 40),
+        height: fontHeight + 3,
+        fontSize: fontHeight,
+        text: newText,
+        pageIndex
+      };
+
+      if (!allPageEdits[pageIndex]) allPageEdits[pageIndex] = [];
+      allPageEdits[pageIndex].push(editData);
+
+      drawVisualMask(editData);
+      span.textContent = newText;
+
+      editModal.style.display = 'none';
+      activeEditTarget = null;
+    };
+
+    function drawVisualMask(edit) {
+      const mask = document.createElement('div');
+      mask.className = 'applied-mask';
+      mask.style.left = `${edit.left}px`;
+      mask.style.top = `${edit.top}px`;
+      mask.style.width = `${edit.width}px`;
+      mask.style.height = `${edit.height}px`;
+      mask.style.fontSize = `${edit.fontSize}px`;
+      mask.innerText = edit.text;
+      wrapper.appendChild(mask);
+    }
+
+    // 4. Multi-Page Navigation
+    function updateNavControls() {
+      pageNumDisplay.textContent = `${currentPage} / ${totalPages}`;
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = currentPage >= totalPages;
+    }
+
+    prevBtn.onclick = () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderPage(currentPage);
+      }
+    };
+
+    nextBtn.onclick = () => {
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderPage(currentPage);
+      }
+    };
+
+    // 5. Export All Pages with Edits
+    saveBtn.onclick = async () => {
+      if (!rawPdfBytes) return;
 
       const { PDFDocument, rgb, StandardFonts } = PDFLib;
-      const loadedPdf = await PDFDocument.load(currentPdfBytes);
-      const helvetica = await loadedPdf.embedFont(StandardFonts.Helvetica);
-      const page = loadedPdf.getPages()[pageNum - 1];
-      const pageHeight = page.getHeight();
+      const pdfLibDoc = await PDFDocument.load(rawPdfBytes.slice(0));
+      const helvetica = await pdfLibDoc.embedFont(StandardFonts.Helvetica);
+      const pages = pdfLibDoc.getPages();
 
-      for (const edit of textEdits) {
-        // Invert Y coordinate because PDF origin starts at the bottom-left
-        const pdfY = pageHeight - edit.y - edit.height;
+      Object.keys(allPageEdits).forEach((pNum) => {
+        const pageIdx = parseInt(pNum, 10) - 1;
+        const page = pages[pageIdx];
+        const pageHeight = page.getHeight();
+        const edits = allPageEdits[pNum];
 
-        // 1. Cover old text with a clean white mask
-        page.drawRectangle({
-          x: edit.x - 1,
-          y: pdfY,
-          width: edit.width + 2,
-          height: edit.height + 2,
-          color: rgb(1, 1, 1),
+        edits.forEach((item) => {
+          // Convert viewport canvas coordinates back to native PDF units
+          const pdfX = item.left / currentScale;
+          const pdfY = (pageHeight - (item.top / currentScale) - (item.height / currentScale));
+          const pdfWidth = item.width / currentScale;
+          const pdfHeight = item.height / currentScale;
+          const pdfFontSize = (item.fontSize / currentScale) * 0.95;
+
+          // Whiteout old text
+          page.drawRectangle({
+            x: pdfX,
+            y: pdfY,
+            width: pdfWidth,
+            height: pdfHeight,
+            color: rgb(1, 1, 1),
+          });
+
+          // Draw replacement text
+          page.drawText(item.text, {
+            x: pdfX,
+            y: pdfY + (pdfFontSize * 0.2),
+            size: pdfFontSize,
+            font: helvetica,
+            color: rgb(0, 0, 0),
+          });
         });
+      });
 
-        // 2. Write new replacement text directly into the mask
-        page.drawText(edit.newText, {
-          x: edit.x,
-          y: pdfY + (edit.fontSize * 0.2),
-          size: edit.fontSize,
-          font: helvetica,
-          color: rgb(0, 0, 0),
-        });
-      }
-
-      const modifiedBytes = await loadedPdf.save();
+      const modifiedBytes = await pdfLibDoc.save();
       const blob = new Blob([modifiedBytes], { type: 'application/pdf' });
-      const dlLink = document.createElement('a');
-      dlLink.href = URL.createObjectURL(blob);
-      dlLink.download = 'edited_document.pdf';
-      dlLink.click();
-    });
+      const downloadLink = document.createElement('a');
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.download = 'edited_document.pdf';
+      downloadLink.click();
+    };
   </script>
 </body>
 </html>
