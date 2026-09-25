@@ -2,36 +2,40 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Modern In-Browser PDF Editor</title>
+  <title>Smart PDF In-Place Editor</title>
+  <!-- PDF.js core & worker -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- pdf-lib -->
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  
   <style>
     :root {
       --bg: #0f172a;
       --panel: #1e293b;
       --accent: #38bdf8;
-      --text: #f8fafc;
       --border: #334155;
+      --text: #f8fafc;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
-    /* Top Toolbar */
+    /* Top Navigation Toolbar */
     .toolbar {
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       padding: 0.75rem 1.5rem;
       display: flex;
-      flex-wrap: wrap;
       align-items: center;
-      gap: 1rem;
+      gap: 1.25rem;
+      z-index: 100;
     }
-    .tool-group { display: flex; align-items: center; gap: 0.5rem; }
+    .hint { font-size: 0.85rem; color: #94a3b8; }
+    .hint span { color: var(--accent); font-weight: 600; }
     button, label.btn {
       background: #0284c7;
       color: #fff;
       border: none;
-      padding: 0.5rem 0.9rem;
+      padding: 0.55rem 1rem;
       border-radius: 6px;
       cursor: pointer;
       font-size: 0.85rem;
@@ -39,60 +43,75 @@
       transition: background 0.2s;
     }
     button:hover, label.btn:hover { background: #0369a1; }
-    button.active { background: #38bdf8; color: #0f172a; }
-    button.export-btn { background: #16a34a; }
-    button.export-btn:hover { background: #15803d; }
+    button.save-btn { background: #16a34a; margin-left: auto; }
+    button.save-btn:hover { background: #15803d; }
     input[type="file"] { display: none; }
-    input[type="text"], input[type="number"], select {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 0.4rem 0.6rem;
-      border-radius: 6px;
-      font-size: 0.85rem;
-    }
 
-    /* Viewer Container */
+    /* Canvas & Viewer Workspace */
     #viewport {
       flex: 1;
       overflow: auto;
       display: flex;
       justify-content: center;
       align-items: flex-start;
-      padding: 2rem;
+      padding: 2.5rem 1rem;
       background: #090d16;
     }
     .page-container {
       position: relative;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
       background: #fff;
     }
     canvas { display: block; }
-    
-    /* Interactive Overlay */
-    .overlay-layer {
+
+    /* Interactive PDF Text Layer */
+    .textLayer {
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: auto;
-      cursor: crosshair;
+      right: 0;
+      bottom: 0;
+      overflow: hidden;
+      line-height: 1.0;
     }
-    .user-text-element {
+    .textLayer span {
+      color: transparent;
       position: absolute;
-      color: #000;
-      cursor: move;
       white-space: pre;
-      user-select: none;
-      border: 1px dashed transparent;
-      padding: 1px 3px;
+      cursor: pointer;
+      transform-origin: 0% 0%;
+      border-radius: 2px;
     }
-    .user-text-element:hover { border-color: #0284c7; }
-    .whiteout-box {
+    .textLayer span:hover {
+      background: rgba(56, 189, 248, 0.25);
+      border: 1px dashed rgba(2, 132, 199, 0.7);
+    }
+
+    /* Live Editing Input Element */
+    .live-editor-input {
       position: absolute;
-      background: #fff;
-      border: 1px dashed #cbd5e1;
+      z-index: 50;
+      border: 2px solid var(--accent);
+      background: #ffffff;
+      color: #000000;
+      font-family: Helvetica, Arial, sans-serif;
+      padding: 0 2px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    /* Visual Mask on Canvas */
+    .applied-edit-box {
+      position: absolute;
+      background: #ffffff;
+      color: #000000;
+      font-family: Helvetica, Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      white-space: pre;
+      z-index: 10;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -102,23 +121,15 @@
     <label class="btn" for="pdf-upload">📂 Open PDF</label>
     <input type="file" id="pdf-upload" accept="application/pdf" />
 
-    <div class="tool-group">
-      <button id="text-mode-btn" class="active">✍️ Add / Replace Text</button>
-      <button id="whiteout-mode-btn">⬜ Whiteout (Erase)</button>
-    </div>
+    <p class="hint">💡 <span>Double-click any text</span> in the document to edit it directly.</p>
 
-    <div class="tool-group">
-      <input type="text" id="text-input" placeholder="Type replacement text..." value="Updated Text" />
-      <input type="number" id="font-size" value="14" min="8" max="72" style="width: 60px;" title="Font Size" />
-    </div>
-
-    <button id="export-btn" class="export-btn">💾 Save & Download PDF</button>
+    <button id="save-btn" class="save-btn">💾 Save & Download</button>
   </div>
 
   <div id="viewport">
     <div id="page-wrapper" class="page-container" style="display: none;">
       <canvas id="pdf-canvas"></canvas>
-      <div id="overlay" class="overlay-layer"></div>
+      <div id="text-layer" class="textLayer"></div>
     </div>
   </div>
 
@@ -129,22 +140,15 @@
     let pdfDoc = null;
     let pageNum = 1;
     let scale = 1.5;
-    let mode = 'text'; // 'text' | 'whiteout'
-    let edits = []; // Stores edits: { type: 'text'|'whiteout', x, y, text, size, width, height }
+    let textEdits = []; // Stores: { x, y, width, height, newText, fontSize }
 
     const uploadInput = document.getElementById('pdf-upload');
     const canvas = document.getElementById('pdf-canvas');
     const ctx = canvas.getContext('2d');
-    const overlay = document.getElementById('overlay');
     const wrapper = document.getElementById('page-wrapper');
-    const textBtn = document.getElementById('text-mode-btn');
-    const whiteoutBtn = document.getElementById('whiteout-mode-btn');
+    const textLayerDiv = document.getElementById('text-layer');
 
-    // Toggle Modes
-    textBtn.onclick = () => { mode = 'text'; textBtn.classList.add('active'); whiteoutBtn.classList.remove('active'); };
-    whiteoutBtn.onclick = () => { mode = 'whiteout'; whiteoutBtn.classList.add('active'); textBtn.classList.remove('active'); };
-
-    // 1. File Upload & Visual Rendering
+    // 1. Load and Render PDF with TextLayer
     uploadInput.addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -152,10 +156,10 @@
       currentPdfBytes = await file.arrayBuffer();
       const loadingTask = pdfjsLib.getDocument({ data: currentPdfBytes });
       pdfDoc = await loadingTask.promise;
-      renderPage(pageNum);
+      renderCurrentPage(pageNum);
     });
 
-    async function renderPage(num) {
+    async function renderCurrentPage(num) {
       const page = await pdfDoc.getPage(num);
       const viewport = page.getViewport({ scale });
 
@@ -165,67 +169,105 @@
       wrapper.style.height = `${viewport.height}px`;
       wrapper.style.display = 'block';
 
-      const renderContext = { canvasContext: ctx, viewport: viewport };
-      await page.render(renderContext).promise;
-      edits = [];
-      overlay.innerHTML = '';
+      // Render Visual Canvas
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      // Extract & Render Text Layer
+      textLayerDiv.innerHTML = '';
+      textEdits = [];
+
+      const textContent = await page.getTextContent();
+      
+      // Render spans to match positions exactly
+      textContent.items.forEach((item) => {
+        const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+        const fontHeight = Math.sqrt((tx[2] * tx[2]) + (tx[3] * tx[3]));
+        
+        const span = document.createElement('span');
+        span.textContent = item.str;
+        span.style.fontSize = `${fontHeight}px`;
+        span.style.fontFamily = item.fontName || 'sans-serif';
+        span.style.left = `${tx[4]}px`;
+        span.style.top = `${tx[5] - fontHeight}px`;
+        span.dataset.rawText = item.str;
+        span.dataset.fontSize = fontHeight;
+
+        // Double click handler for in-place edit
+        span.addEventListener('dblclick', (evt) => {
+          evt.stopPropagation();
+          startInPlaceEdit(span, tx[4], tx[5] - fontHeight, fontHeight, item);
+        });
+
+        textLayerDiv.appendChild(span);
+      });
     }
 
-    // 2. Click to Add Text or Whiteout Mistake
-    overlay.addEventListener('click', (e) => {
-      if (!pdfDoc) return;
-      const rect = overlay.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const clickY = e.clientY - rect.top;
+    // 2. Open an Input Box directly on the Double-Clicked Word
+    function startInPlaceEdit(span, left, top, fontHeight, rawItem) {
+      // Remove any existing active input box
+      const existing = document.querySelector('.live-editor-input');
+      if (existing) existing.remove();
 
-      const fontSize = parseInt(document.getElementById('font-size').value, 10) || 14;
-      const content = document.getElementById('text-input').value;
+      const rect = span.getBoundingClientRect();
+      const parentRect = wrapper.getBoundingClientRect();
 
-      if (mode === 'text') {
-        if (!content) return alert('Enter replacement text in the toolbar first!');
-        
-        // Add visual text element
-        const el = document.createElement('div');
-        el.className = 'user-text-element';
-        el.innerText = content;
-        el.style.fontSize = `${fontSize * scale * 0.75}px`;
-        el.style.left = `${clickX}px`;
-        el.style.top = `${clickY - (fontSize * scale * 0.5)}px`;
-        overlay.appendChild(el);
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'live-editor-input';
+      input.value = span.textContent.trim();
+      
+      const width = Math.max(rect.width + 10, 80);
+      input.style.width = `${width}px`;
+      input.style.height = `${fontHeight + 6}px`;
+      input.style.fontSize = `${fontHeight}px`;
+      input.style.left = `${left}px`;
+      input.style.top = `${top - 2}px`;
 
-        edits.push({
-          type: 'text',
-          x: clickX / scale,
-          y: clickY / scale,
-          text: content,
-          size: fontSize
-        });
-      } else if (mode === 'whiteout') {
-        // Erase 120x24px area (standard line width)
-        const boxWidth = 120;
-        const boxHeight = 22;
+      wrapper.appendChild(input);
+      input.focus();
+      input.select();
 
-        const box = document.createElement('div');
-        box.className = 'whiteout-box';
-        box.style.width = `${boxWidth * scale}px`;
-        box.style.height = `${boxHeight * scale}px`;
-        box.style.left = `${clickX}px`;
-        box.style.top = `${clickY - (boxHeight * scale / 2)}px`;
-        overlay.appendChild(box);
+      // Commit changes when user hits Enter or clicks away (blur)
+      function commitChange() {
+        const newValue = input.value;
+        input.remove();
 
-        edits.push({
-          type: 'whiteout',
-          x: clickX / scale,
-          y: clickY / scale,
-          width: boxWidth,
-          height: boxHeight
-        });
+        if (newValue !== span.textContent) {
+          span.textContent = newValue;
+
+          // Draw an instant visual patch over the canvas
+          const patch = document.createElement('div');
+          patch.className = 'applied-edit-box';
+          patch.style.left = `${left}px`;
+          patch.style.top = `${top - 1}px`;
+          patch.style.width = `${Math.max(rect.width + 4, width)}px`;
+          patch.style.height = `${fontHeight + 2}px`;
+          patch.style.fontSize = `${fontHeight}px`;
+          patch.innerText = newValue;
+          wrapper.appendChild(patch);
+
+          // Save coordinates for final PDF export
+          textEdits.push({
+            x: left / scale,
+            y: top / scale,
+            width: (Math.max(rect.width + 4, width)) / scale,
+            height: (fontHeight + 4) / scale,
+            newText: newValue,
+            fontSize: (fontHeight / scale) * 0.95
+          });
+        }
       }
-    });
 
-    // 3. Save & Export Modded PDF
-    document.getElementById('export-btn').addEventListener('click', async () => {
-      if (!currentPdfBytes) return alert('Please upload a PDF first.');
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') commitChange();
+        if (e.key === 'Escape') input.remove();
+      });
+      input.addEventListener('blur', commitChange);
+    }
+
+    // 3. Bake and Export using pdf-lib
+    document.getElementById('save-btn').addEventListener('click', async () => {
+      if (!currentPdfBytes) return alert('Please load a PDF document first.');
 
       const { PDFDocument, rgb, StandardFonts } = PDFLib;
       const loadedPdf = await PDFDocument.load(currentPdfBytes);
@@ -233,34 +275,34 @@
       const page = loadedPdf.getPages()[pageNum - 1];
       const pageHeight = page.getHeight();
 
-      for (const edit of edits) {
-        // PDF coordinates originate from bottom-left; web browser originates from top-left
-        const pdfY = pageHeight - edit.y;
+      for (const edit of textEdits) {
+        // Invert Y coordinate because PDF origin starts at the bottom-left
+        const pdfY = pageHeight - edit.y - edit.height;
 
-        if (edit.type === 'whiteout') {
-          page.drawRectangle({
-            x: edit.x,
-            y: pdfY - (edit.height / 2),
-            width: edit.width,
-            height: edit.height,
-            color: rgb(1, 1, 1), // Pure white cover
-          });
-        } else if (edit.type === 'text') {
-          page.drawText(edit.text, {
-            x: edit.x,
-            y: pdfY - (edit.size * 0.35),
-            size: edit.size,
-            font: helvetica,
-            color: rgb(0, 0, 0),
-          });
-        }
+        // 1. Cover old text with a clean white mask
+        page.drawRectangle({
+          x: edit.x - 1,
+          y: pdfY,
+          width: edit.width + 2,
+          height: edit.height + 2,
+          color: rgb(1, 1, 1),
+        });
+
+        // 2. Write new replacement text directly into the mask
+        page.drawText(edit.newText, {
+          x: edit.x,
+          y: pdfY + (edit.fontSize * 0.2),
+          size: edit.fontSize,
+          font: helvetica,
+          color: rgb(0, 0, 0),
+        });
       }
 
       const modifiedBytes = await loadedPdf.save();
       const blob = new Blob([modifiedBytes], { type: 'application/pdf' });
       const dlLink = document.createElement('a');
       dlLink.href = URL.createObjectURL(blob);
-      dlLink.download = 'modified_document.pdf';
+      dlLink.download = 'edited_document.pdf';
       dlLink.click();
     });
   </script>
